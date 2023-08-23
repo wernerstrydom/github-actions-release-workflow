@@ -1,0 +1,109 @@
+name: 'Release'
+run-name: 'Release'
+concurrency: release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Next Version (optional). If not provided, the next version will be calculated automatically.'
+        required: false
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      product-version: ${{ steps.export-version.outputs.product-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Version
+        if: ${{ github.event.inputs.version == '' }}
+        run: |
+          git tag --sort=committerdate
+          existing_version=`git tag --sort=committerdate | grep -E '[0-9]' | tail -1 | cut -b 2-7`
+          version=`echo "$existing_version" | awk 'BEGIN{FS=OFS="."} {$3+=1} 1'`
+          echo "Existing version: $existing_version"
+          echo "New version: $version"
+          echo "PRODUCT_VERSION=$version" >> $GITHUB_ENV
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Version
+        if: ${{ github.event.inputs.version != '' }}
+        run: |
+          echo "PRODUCT_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+
+      - name: Export Version
+        id: export-version
+        run: |
+          echo "product-version=${{ env.PRODUCT_VERSION }}" >> $GITHUB_OUTPUT
+
+      - name: Validate Version
+        run: |
+          re='^[0-9]+(\.[0-9]+)*$';
+          if [[ "${{ env.PRODUCT_VERSION }}" =~ $re ]]; then
+            echo "'${{ env.PRODUCT_VERSION }}' is a valid version number"
+          else
+            echo "'${{ env.PRODUCT_VERSION }}' isn't a valid version number. Provide a number '1.2.3' or when creating a tag, use 'v1.2.3'."
+            exit 1
+          fi
+          if git show-ref --tags --verify --quiet "refs/tags/v${{ env.PRODUCT_VERSION }}"; then
+            echo "Release ${{ env.PRODUCT_VERSION }} exists. You may need to provide a new version or delete the existing release and it's tag."
+            exit 1
+          else
+            echo "Release ${{ env.PRODUCT_VERSION }} does not exist."
+          fi
+
+  publish:
+    name: Publish
+    needs:
+      - version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print Version
+        run: echo "PRODUCT_VERSION=${{ needs.version.outputs.product-version }}"
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        run: |
+          git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+          echo "No Changes" > release_notes.txt
+          git log $(git describe --tags --abbrev=0)..@ --pretty=format:'- %s' --reverse | grep -v Merge | grep -v Merge > release_notes.txt || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Draft Release
+        run: gh release create --draft --title "v${{ needs.version.outputs.product-version }}" --notes-file release_notes.txt "v${{ needs.version.outputs.product-version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Archiving
+        run: |
+          zip -r "./${{ github.event.repository.name }}.zip" . -x ".git/*" ".github/*" ".terraform/*" "*.hcl" "*.yml" ".gitignore" ".editorconfig"
+
+      - name: Upload Assets
+        run: |
+          gh release upload "v${{ needs.version.outputs.product-version }}" --clobber "./${{ github.event.repository.name }}.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish
+        run: gh release edit "v${{ needs.version.outputs.product-version }}" --draft=false --latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # only run cleanup when there was a failure
+      - name: Cleanup
+        if: failure()
+        run: |
+          gh release delete "v${{ needs.version.outputs.product-version }}" --yes
+          git tag -d "v${{ needs.version.outputs.product-version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
