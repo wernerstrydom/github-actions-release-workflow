@@ -24,7 +24,12 @@ jobs:
         run: |
           git tag --sort=committerdate
           existing_version=`git tag --sort=committerdate | grep -E '[0-9]' | tail -1 | cut -b 2-7`
-          version=`echo "$existing_version" | awk 'BEGIN{FS=OFS="."} {$3+=1} 1'`
+          if [ -z "$existing_version" ]; then
+            existing_version="0.1.0"
+            version="0.1.0"
+          else
+            version=`echo "$existing_version" | awk 'BEGIN{FS=OFS="."} {$3+=1} 1'`
+          fi
           echo "Existing version: $existing_version"
           echo "New version: $version"
           echo "PRODUCT_VERSION=$version" >> $GITHUB_ENV
