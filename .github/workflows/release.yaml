@@ -50,13 +50,13 @@ jobs:
         run: |
           re='^[0-9]+(\.[0-9]+)*$';
           if [[ "${{ env.PRODUCT_VERSION }}" =~ $re ]]; then
-            echo "'${{ env.PRODUCT_VERSION }}' is a valid version number"
+            echo "'${{ env.PRODUCT_VERSION }}' is a valid version number."
           else
             echo "'${{ env.PRODUCT_VERSION }}' isn't a valid version number. Provide a number '1.2.3' or when creating a tag, use 'v1.2.3'."
             exit 1
           fi
           if git show-ref --tags --verify --quiet "refs/tags/v${{ env.PRODUCT_VERSION }}"; then
-            echo "Release ${{ env.PRODUCT_VERSION }} exists. You may need to provide a new version or delete the existing release and it's tag."
+            echo "Release ${{ env.PRODUCT_VERSION }} exists. You may need to provide a new version or delete the existing release and its tag."
             exit 1
           else
             echo "Release ${{ env.PRODUCT_VERSION }} does not exist."
@@ -80,7 +80,11 @@ jobs:
         run: |
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
           echo "No Changes" > release_notes.txt
-          git log $(git describe --tags --abbrev=0)..@ --pretty=format:'- %s' --reverse | grep -v Merge | grep -v Merge > release_notes.txt || true
+          if [ "$PRODUCT_VERSION" == "0.1.0" ]; then
+            git log --pretty=format:'- %s' --reverse | grep -v Merge | grep -v Merge > release_notes.txt || true
+          else
+            git log $(git describe --tags --abbrev=0)..@ --pretty=format:'- %s' --reverse | grep -v Merge | grep -v Merge > release_notes.txt || true
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
