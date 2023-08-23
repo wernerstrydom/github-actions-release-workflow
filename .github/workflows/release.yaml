@@ -78,11 +78,11 @@ jobs:
 
       - name: Generate Release Notes
         run: |
-          git fetch --depth=1 origin +refs/tags/*:refs/tags/*
           echo "No Changes" > release_notes.txt
           if [ "$PRODUCT_VERSION" == "0.1.0" ]; then
             git log --pretty=format:'- %s' --reverse | grep -v Merge | grep -v Merge > release_notes.txt || true
           else
+            git fetch --depth=1 origin +refs/tags/*:refs/tags/*
             git log $(git describe --tags --abbrev=0)..@ --pretty=format:'- %s' --reverse | grep -v Merge | grep -v Merge > release_notes.txt || true
           fi
         env:
